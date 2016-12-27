@@ -23,9 +23,25 @@
  */
 
 #include "esp_common.h"
+#include "user_config.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/queue.h"
+#include "gpio.h"
+#include "driver/oled.h"
 
-char test_mode = 4;
 
+#define HIGH 1
+#define LOW 0
+#define KEY_QUEUE_LEN 4
+uint8 keyValue;
+struct TTP226keyCheck{
+	BOOL TTP226CkStatus;
+	uint8 checkbit;
+}keyPinCheck;
+uint times;
+
+xQueueHandle keyTaskQueue;
 /******************************************************************************
  * FunctionName : user_rf_cal_sector_set
  * Description  : SDK just reversed 4 sectors, used for rf init data and paramters.
@@ -70,6 +86,173 @@ uint32 user_rf_cal_sector_set(void)
     return rf_cal_sec;
 }
 
+
+/******************************************************************************
+ * FunctionName : ttp226_GetKeyValue
+ * Description  : get ttp226 key value
+ * Parameters   : none
+ * Returns      : uint8
+*******************************************************************************/
+uint8 ttp226_GetKeyValue(void){
+	uint8 i;
+	uint8 keyValue = 0;
+
+	os_delay_us(17);
+	GPIO_OUTPUT_SET(TTP226_CK,LOW);
+	GPIO_OUTPUT_SET(TTP226_RST,HIGH);
+	os_delay_us(62);
+	GPIO_OUTPUT_SET(TTP226_RST,LOW);
+	//keyPinCheck.TTP226CkStatus=false;
+	//keyPinCheck.checkbit=0;
+	//os_timer_arm_us(keyTimer, 62 , 1);
+	for(i=0;i<8;i++){
+		keyValue = keyValue >>1;
+		os_delay_us(62);
+		GPIO_OUTPUT_SET(TTP226_CK,HIGH);
+		if(GPIO_INPUT_GET(TTP226_D0) == 0){
+			keyValue = keyValue & 0x7f;
+		} else {
+			keyValue = keyValue | 0x80;
+		}
+		os_delay_us(62);
+		GPIO_OUTPUT_SET(TTP226_CK,LOW);
+	}
+	return keyValue;
+}
+
+/******************************************************************************
+ * FunctionName : key_gpio_intertupt_handler
+ * Description  : key
+ * Parameters   : none
+ * Returns      : none
+*******************************************************************************/
+void key_gpio_intertupt_handler(void *para){
+	uint16 gpioStatus = 0;
+	uint8 keyValue = 0xAB;
+	portBASE_TYPE xStatus;
+
+	/*clear interrupt*/
+	gpioStatus = GPIO_REG_READ(GPIO_STATUS_ADDRESS);
+	GPIO_REG_WRITE(GPIO_STATUS_W1TC_ADDRESS, gpioStatus);
+	printf("Receive Interrupt message 0x%x\r\n", gpioStatus);
+	times = 0;
+	if(gpioStatus = GPIO_ID_PIN(TTP226_DV)){
+		xStatus = xQueueSendToBack( keyTaskQueue, &keyValue, 0 );
+	}
+}
+/******************************************************************************
+ * FunctionName : key_task
+ * Description  : key task function
+ * Parameters   : none
+ * Returns      : none
+*******************************************************************************/
+void key_task(void *pvParameters){
+	uint8 keyValueBuff;
+	portBASE_TYPE xStatus;
+	static BOOL level=false;
+	while(1){
+		xStatus = xQueueReceive( keyTaskQueue, &keyValueBuff, portMAX_DELAY );
+		if (keyValueBuff == 0xAA ) {
+			times++;
+			printf("Receive Cycle message %d\r\n",times);
+		/*	if(level){
+				GPIO_OUTPUT_SET(TTP226_RST,LOW);
+				level = false;
+			} else {
+				GPIO_OUTPUT_SET(TTP226_RST,HIGH);
+				level = true;
+			}*/
+
+		}
+		if (keyValueBuff == 0xAB ) {
+			keyValue    = ttp226_GetKeyValue();
+			printf("Receive Interrupt message 0x%x\r\n",keyValue);
+			switch (keyValue) {
+			case 0x01:
+				oled_clear();
+				break;
+			case 0x02:
+				oled_showString(0,0, " MSBAKE TEST");
+				oled_showString(0,16,"PangHailong");
+				oled_showString(0,32,"2016/12/24");
+
+				oled_showString(0,48,"TEMP:");
+				oled_showString(63,48,"100");
+				oled_refresh_Gram();
+				break;
+			case 0x04:
+				oled_showString(0,0, "0.01'OVEN TEST");
+				oled_showString(0,16,"PangHailong");
+				oled_showString(0,32,"2016/12/24");
+
+				oled_showString(0,48,"TEMP:");
+				oled_showString(63,48,"60");
+				oled_refresh_Gram();
+				break;
+			case 0x08:
+				oled_showPic(6,36,CYCLE);
+				oled_refresh_Gram();
+				break;
+			case 0x10:
+				oled_showPic(6,36,SOLID_CYCLE);
+				oled_refresh_Gram();
+				break;
+			default:
+				break;
+			}
+		}
+
+	}
+	vTaskDelete( NULL );
+}
+
+void cycle_task(void *pvParameters){
+
+	uint8 keyValue = 0xAA;
+
+	portBASE_TYPE xStatus;
+
+	while(1){
+		xStatus = xQueueSendToBack( keyTaskQueue, &keyValue, 0 );
+		vTaskDelay( 100 );
+	}
+}
+/******************************************************************************
+ * FunctionName : keyInit
+ * Description  : the  key initializing
+ * Parameters   : none
+ * Returns      : none
+*******************************************************************************/
+void key_init(){
+
+	keyTaskQueue = xQueueCreate( 5, sizeof( uint8 ) );
+
+
+	PIN_FUNC_SELECT(PERIPHS_IO_MUX_MTDI_U,FUNC_GPIO12);
+	PIN_FUNC_SELECT(PERIPHS_IO_MUX_MTMS_U,FUNC_GPIO14);
+	PIN_FUNC_SELECT(PERIPHS_IO_MUX_MTCK_U,FUNC_GPIO13);
+	PIN_FUNC_SELECT(PERIPHS_IO_MUX_MTDO_U,FUNC_GPIO15);
+
+	//GPIO_OUTPUT_SET(TTP226_CK,LOW);
+	//GPIO_OUTPUT_SET(TTP226_RST,HIGH);
+	//os_delay_us(100);
+	GPIO_OUTPUT_SET(TTP226_RST,LOW);
+	portENTER_CRITICAL();
+	GPIO_DIS_OUTPUT(TTP226_D0);
+	GPIO_DIS_OUTPUT(TTP226_DV);
+	gpio_pin_intr_state_set(GPIO_ID_PIN(TTP226_DV),GPIO_PIN_INTR_POSEDGE);
+	_xt_isr_attach(ETS_GPIO_INUM, (_xt_isr)key_gpio_intertupt_handler,NULL);
+	_xt_isr_unmask(1<<ETS_GPIO_INUM);
+	portENABLE_INTERRUPTS();
+	portEXIT_CRITICAL();
+
+	xTaskCreate(key_task,"keyTask",256,NULL,2,NULL);
+	xTaskCreate(cycle_task,"keyTask",256,NULL,2,NULL);
+
+}
+
+
+
 /******************************************************************************
  * FunctionName : user_init
  * Description  : entry of user application, init user function here
@@ -78,7 +261,14 @@ uint32 user_rf_cal_sector_set(void)
 *******************************************************************************/
 void user_init(void)
 {
-    os_printf("SDK version:%s\n", system_get_sdk_version());
-    wifi_set_opmode(STATION_MODE);
-    websocket_start(&test_mode);
+	uart_init_new();
+	printf("SDK version:%s\n", system_get_sdk_version());
+	key_init();
+	oled_i2c_master_gpio_init();
+	oled_clear();
+	Initial_M096128x64_ssd1306();
+    wifi_set_opmode(STATIONAP_MODE);
+
+
 }
+
