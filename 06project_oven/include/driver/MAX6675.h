@@ -17,7 +17,7 @@
 //Define SPI hardware modules
 #define MAX6675_CS   15
 #define MAX6675_CK   14
-#define MAX6675_SO	 13
+#define MAX6675_SO	 12
 
 
 #define HIGH 1
