@@ -207,7 +207,7 @@ int multiThreadDemo(unsigned char *msg_buf,unsigned char *msg_readbuf)
 	unsigned iter = 0;
 	for (iter = 0; iter < MAX_PUBLISH_THREAD_COUNT; iter++)
 	{
-		rc = xTaskCreate(pubThread, "pub_thread", 2048, &client, 1, &publishThread[iter].threadID);
+		rc = xTaskCreate(pubThread, "pub_thread", 512, &client, 1, &publishThread[iter].threadID);
 		if(1 == rc)
 		{
 			printf("create publish thread success ");
@@ -356,8 +356,8 @@ int mqtt_client_demo()
         return -1;
     }
 
-    singleThreadDemo(msg_buf,msg_readbuf);
-//    multiThreadDemo(msg_buf,msg_readbuf);
+   // singleThreadDemo(msg_buf,msg_readbuf);
+    multiThreadDemo(msg_buf,msg_readbuf);
 
     free(msg_buf);
     free(msg_readbuf);
@@ -686,7 +686,7 @@ void user_init(void)
     xReturned2 = xTaskCreate(
                             connect_mqttserver,       /* Function that implements the task. */
                             "connet to mqttserver",          /* Text name for the task. */
-                            4096,      /* Stack size in words, not bytes. */
+                            2048,      /* Stack size in words, not bytes. */
                             ( void * ) 1,    /* Parameter passed into the task. */
                             tskIDLE_PRIORITY,/* Priority at which the task is created. */
                             &xHandle2 );      /* Used to pass out the created task's handle. */
