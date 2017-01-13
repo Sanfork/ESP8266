@@ -57,16 +57,17 @@ Porting Step
 	INCLUDES += -I $(SDK_PATH)/include/lwip/lwip
 	INCLUDES += -I $(SDK_PATH)/include
 
-13 SemaphoreHandle_t  - > xSemaphoreHandle
-   TaskHandle_t -> xTaskHandle
+13 Modify SemaphoreHandle_t  to xSemaphoreHandle
+   Modify TaskHandle_t to xTaskHandle
    delete the BOOL define in aliyun_iot_common_datatype.h
 14 aliyun_iot_platform_threadsync.c line 5
-   xSemaphoreCreateBinary -> xSemaphoreCreateMutex
+   Modify xSemaphoreCreateBinary to  xSemaphoreCreateMutex
 
 15 in  aliyun_iot_platform_network.c
    add #include "netdb.h"
-   in include/lwip/lwip netdb.h
-   add /* Flag values for getaddrinfo function. */
+   in include/lwip/lwip of RTOS_SDK, 
+   add below code to netdb.h
+   /* Flag values for getaddrinfo function. */
 	#define AI_PASSIVE      0x1	/* Intend socket address for bind. */
 	#define AI_CANONNAME    0x2	/* Return canonical node name. */
 	#define AI_NUMERICHOST  0x4	/* Input is address, don't resolve. */
@@ -86,7 +87,7 @@ Porting Step
 	#define AI_IDN_USE_STD3_ASCII_RULES 0x20000 /* Filter ASCII chars according to
 						       STD3 rules.  */
 16 in aliyun_iot_auth.c line 333
-	errCode[0] ->  errCode
+  Modify errCode[0] to  errCode
 	
 	
 17 aliyun_iot_auth.c line 337
