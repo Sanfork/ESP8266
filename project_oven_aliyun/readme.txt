@@ -96,7 +96,9 @@ Porting Step
 18 aliyun_iot_platform_pthread.c in aliyun_iot_pthread_create
  Modify 2048 to 512
   
-
+19 aliyun_iot_common_json.c
+   in order to void  multiple definition of `cJSON_ParseWithOpts'
+   modify  cJSON_ParseWithOpts to cJSON_ParseWithOpts_I
 
 
 
