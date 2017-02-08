@@ -392,7 +392,7 @@ static const char *skip(const char *in)
 }
 
 /* Parse an object - create a new root, and populate. */
-cJSON *cJSON_ParseWithOpts(const char *value, const char **return_parse_end, int require_null_terminated)
+cJSON *cJSON_ParseWithOpts_I(const char *value, const char **return_parse_end, int require_null_terminated)
 {
     const char *end = 0;
     cJSON *c = cJSON_New_Item();
@@ -825,7 +825,7 @@ void aliyun_iot_common_json_delete(cJSON *c)
 /* Default options for cJSON_Parse */
 cJSON *aliyun_iot_common_json_parse(const INT8 *value)
 {
-    return cJSON_ParseWithOpts(value, 0, 0);
+    return cJSON_ParseWithOpts_I(value, 0, 0);
 }
 
 /* Render a cJSON item/entity/structure to text. */
