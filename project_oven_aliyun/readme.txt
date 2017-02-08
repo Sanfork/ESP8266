@@ -97,8 +97,8 @@ Porting Step
  Modify 2048 to 512
   
 19 aliyun_iot_common_json.c
-   in order to void  multiple definition of `cJSON_ParseWithOpts'
-   modify  cJSON_ParseWithOpts to cJSON_ParseWithOpts_I
+   in order to void  multiple definition of `cJSON_ParseWithOpts' with third_party/josn/cJSON.c
+   modify  cJSON_ParseWithOpts to cJSON_ParseWithOpts_I
 
 
 
