@@ -37,15 +37,17 @@
 #include "aliyun_iot_auth.h"
 #include "FreeRTOS.h"
 #include "task.h"
+#include "cJSON.h"
 
-#define HOST_NAME       "iot.channel.aliyun.com"
+#define HOST_NAME       "iot-auth.aliyun.com" //"iot.channel.aliyun.com"
 #define PRODUCT_KEY    	"1000118719"
 #define PRODUCT_SECRET 	"kQ5ZNciHxMwe4b1y"
-#define DEVICE_NAME    	"oven_d"
-#define DEVICE_SECRET  	"1Kk6VAUXQUi1m3g7"
-#define TOPIC          	"/1000118719/oven_d/upload"
+#define DEVICE_NAME    	"oven_d1"
+#define DEVICE_SECRET  	"6SCAPhSZPqjNcN72"
+#define TOPIC          	"/1000118719/oven_d1/upload"
 
-#define MSG_LEN_MAX 100
+#define MSG_LEN_MAX 200
+#define USER_DATA_ADDR   0x3F8
 
 
 /**Number of publish thread*/
@@ -58,10 +60,89 @@ LOCAL struct espconn user_tcp_conn;
 LOCAL struct _esp_tcp user_tcp;
 ip_addr_t tcp_server_ip;
 
+
+char * cJsonStatusUpCreate(void)
+{
+    /*Create jSON*/
+  /*
+    {
+      " Dev_no ":"sxx1123456",
+      " Up_temp ":100,
+      " Up_status ":1,
+      " Down_temp ":100,
+      " Down_status ":1,
+      " Warm_time ":"1:20",
+      " Fan_speed ":50,
+      " Spit_speed ":50,
+      " Light_status ":1
+    }
+*/
+
+	uint8 * out;
+	cJSON *status;
+
+	status = cJSON_CreateObject();
+	if(!status)
+	{
+		printf("cJSON create error!!\n");
+		return NULL;
+	}
+
+	cJSON_AddItemToObject(status, "Dev_no", cJSON_CreateString("oven1123456"));
+	cJSON_AddItemToObject(status, "Up_temp", cJSON_CreateNumber(100));
+	cJSON_AddItemToObject(status, "Up_status", cJSON_CreateNumber(1));
+	cJSON_AddItemToObject(status, "Down_temp", cJSON_CreateNumber(100));
+	cJSON_AddItemToObject(status, "Down_status", cJSON_CreateNumber(1));
+	cJSON_AddItemToObject(status, "Warm_time", cJSON_CreateString("1:20"));
+	cJSON_AddItemToObject(status, "Fan_speed", cJSON_CreateNumber(20));
+	cJSON_AddItemToObject(status, "Spit_speed", cJSON_CreateNumber(20));
+	cJSON_AddItemToObject(status, "Light_status", cJSON_CreateNumber(1));
+
+   out=cJSON_PrintUnformatted(status);
+   cJSON_Delete(status);
+
+   if(out)
+   {
+       printf("%s\n", out);
+       return out;
+   }
+
+   return NULL;
+}
+
+void cJsonParse(char *data){
+	cJSON * jsonData;
+	cJSON * DevId, *UpTemp;
+
+	jsonData = cJSON_Parse(data);
+	if(!jsonData){
+		printf("cJsonParse error!!\n");
+		return;
+	}
+
+	DevId =  cJSON_GetObjectItem(jsonData, "Dev_no");
+	if(DevId){
+		printf("get dev no: %s\n", DevId->valuestring);
+	}
+
+	UpTemp =  cJSON_GetObjectItem(jsonData, "Up_temp");
+	if(UpTemp){
+		printf("get above temperature: %d\n", UpTemp->valueint);
+	}
+
+	cJSON_Delete(jsonData);
+}
+
+struct station_config_save {
+	struct station_config config;
+	uint8 save_flag;
+};
+struct station_config a;
+
 //callback of publish
 static void messageArrived(MessageData *md)
 {
-    char msg[MSG_LEN_MAX] = {0};
+	char msg[MSG_LEN_MAX] = {0};
 
     MQTTMessage *message = md->message;
     if(message->payloadlen > MSG_LEN_MAX - 1)
@@ -73,6 +154,8 @@ static void messageArrived(MessageData *md)
 	memcpy(msg,message->payload,message->payloadlen);
 
 	printf("Message : %s\n", msg);
+	//WRITE_IOT_DEBUG_LOG("recv sub message,message =  %s\n", msg);
+	cJsonParse(msg);
 }
 
 static void publishComplete(void* context, unsigned int msgId)
@@ -98,6 +181,10 @@ void  pubThread(void*param)
     static int threadID = 0;
     int id = threadID++;
 
+    /*Test Json*/
+    char * messageData;
+    messageData = cJsonStatusUpCreate();
+
     for(;;)
     {
         int i = 0;
@@ -106,10 +193,11 @@ void  pubThread(void*param)
             memset(&message,0x0,sizeof(message));
             sprintf(buf, "Hello World! threadId = %d, num = %d\n",id,num++);
             message.qos = QOS1;
-            message.retained = FALSE_IOT;
+            message.retained = TRUE_IOT;//FALSE_IOT;
             message.dup = FALSE_IOT;
-            message.payload = (void *) buf;
-            message.payloadlen = strlen(buf);
+            message.payload = (void *) messageData;//buf;
+            printf("messageDate len %d\n",strlen(messageData));
+            message.payloadlen = strlen(messageData);//(buf);
             message.id = 0;
             rc = aliyun_iot_mqtt_publish(client, TOPIC, &message);
             if (0 != rc)
@@ -161,7 +249,7 @@ int multiThreadDemo(unsigned char *msg_buf,unsigned char *msg_readbuf)
     IOT_CLIENT_INIT_PARAMS initParams;
     memset(&initParams,0x0,sizeof(initParams));
 
-    initParams.mqttCommandTimeout_ms = 2000;
+    initParams.mqttCommandTimeout_ms = 10000;//2000;
     initParams.pReadBuf = msg_readbuf;
     initParams.readBufSize = MSG_LEN_MAX;
     initParams.pWriteBuf = msg_buf;
@@ -202,6 +290,8 @@ int multiThreadDemo(unsigned char *msg_buf,unsigned char *msg_readbuf)
         aliyun_iot_pthread_taskdelay(100);
         rc = aliyun_iot_mqtt_suback_sync(&client, TOPIC, messageArrived);
     }while(rc != SUCCESS_RETURN);
+
+
 
 	ALIYUN_IOT_PTHREAD_S publishThread[MAX_PUBLISH_THREAD_COUNT];
 	unsigned iter = 0;
@@ -420,10 +510,10 @@ uint32 user_rf_cal_sector_set(void)
 
 xSemaphoreHandle xSemaphore = NULL;
 /******************************************************************************
-   * FunctionName : user_tcp_recv_cb
-   * Description  : receive callback.
-   * Parameters   : arg -- Additional argument to pass to the callback function
-   * Returns      : none
+   * FunctionName : user_tcp_recv_cb
+   * Description  : receive callback.
+   * Parameters   : arg -- Additional argument to pass to the callback function
+   * Returns      : none
  *******************************************************************************/
     LOCAL void ICACHE_FLASH_ATTR
 user_tcp_recv_cb(void *arg, char *pusrdata, unsigned short length)
@@ -432,10 +522,10 @@ user_tcp_recv_cb(void *arg, char *pusrdata, unsigned short length)
     printf("tcp recv !!! %s \r\n", pusrdata);
 }
 /******************************************************************************
-   * FunctionName : user_tcp_sent_cb
-   * Description  : data sent callback.
-   * Parameters   : arg -- Additional argument to pass to the callback function
-   * Returns      : none
+   * FunctionName : user_tcp_sent_cb
+   * Description  : data sent callback.
+   * Parameters   : arg -- Additional argument to pass to the callback function
+   * Returns      : none
  *******************************************************************************/
 LOCAL void ICACHE_FLASH_ATTR
 user_tcp_sent_cb(void *arg)
@@ -444,10 +534,10 @@ user_tcp_sent_cb(void *arg)
     printf("tcp sent succeed !!! \r\n");
 }
 /******************************************************************************
-   * FunctionName : user_tcp_discon_cb
-   * Description  : disconnect callback.
-   * Parameters   : arg -- Additional argument to pass to the callback function
-   * Returns      : none
+   * FunctionName : user_tcp_discon_cb
+   * Description  : disconnect callback.
+   * Parameters   : arg -- Additional argument to pass to the callback function
+   * Returns      : none
  *******************************************************************************/
 LOCAL void ICACHE_FLASH_ATTR
 user_tcp_discon_cb(void *arg)
@@ -456,10 +546,10 @@ user_tcp_discon_cb(void *arg)
     printf("tcp disconnect succeed !!! \r\n");
 }
 /******************************************************************************
-   * FunctionName : user_esp_platform_sent
-   * Description  : Processing the application data and sending it to the host
-   * Parameters   : pespconn -- the espconn used to connetion with the host
-   * Returns      : none
+   * FunctionName : user_esp_platform_sent
+   * Description  : Processing the application data and sending it to the host
+   * Parameters   : pespconn -- the espconn used to connetion with the host
+   * Returns      : none
  *******************************************************************************/
 LOCAL void ICACHE_FLASH_ATTR
 user_sent_data(struct espconn *pespconn)
@@ -470,10 +560,10 @@ user_sent_data(struct espconn *pespconn)
     free(pbuf);
 }
 /******************************************************************************
-   * FunctionName : user_tcp_connect_cb
-   * Description  : A new incoming tcp connection has been connected.
-   * Parameters   : arg -- Additional argument to pass to the callback function
-   * Returns      : none
+   * FunctionName : user_tcp_connect_cb
+   * Description  : A new incoming tcp connection has been connected.
+   * Parameters   : arg -- Additional argument to pass to the callback function
+   * Returns      : none
  *******************************************************************************/
 LOCAL void ICACHE_FLASH_ATTR
 user_tcp_connect_cb(void *arg)
@@ -486,10 +576,10 @@ user_tcp_connect_cb(void *arg)
     user_sent_data(pespconn);
 }
 /******************************************************************************
-   * FunctionName : user_tcp_recon_cb
-   * Description  : reconnect callback, error occured in TCP connection.
-   * Parameters   : arg -- Additional argument to pass to the callback function
-   * Returns      : none
+   * FunctionName : user_tcp_recon_cb
+   * Description  : reconnect callback, error occured in TCP connection.
+   * Parameters   : arg -- Additional argument to pass to the callback function
+   * Returns      : none
  *******************************************************************************/
 LOCAL void ICACHE_FLASH_ATTR
 user_tcp_recon_cb(void *arg, sint8 err)
@@ -499,15 +589,15 @@ user_tcp_recon_cb(void *arg, sint8 err)
 }
 #ifdef DNS_ENABLE
 /******************************************************************************
-   * FunctionName : user_dns_found
-   * Description  : dns found callback
-   * Parameters   : name -- pointer to the name that was looked up.
-   *                ipaddr -- pointer to an ip_addr_t containing the IP address of
-   *                the hostname, or NULL if the name could not be found (or on any
-   *                other error).
-   *                callback_arg -- a user-specified callback argument passed to
-   *                dns_gethostbyname
-   * Returns      : none
+   * FunctionName : user_dns_found
+   * Description  : dns found callback
+   * Parameters   : name -- pointer to the name that was looked up.
+   *                ipaddr -- pointer to an ip_addr_t containing the IP address of
+   *                the hostname, or NULL if the name could not be found (or on any
+   *                other error).
+   *                callback_arg -- a user-specified callback argument passed to
+   *                dns_gethostbyname
+   * Returns      : none
  *******************************************************************************/
 LOCAL void ICACHE_FLASH_ATTR
 user_dns_found(const char *name, ip_addr_t *ipaddr, void *arg)
@@ -536,10 +626,10 @@ user_dns_found(const char *name, ip_addr_t *ipaddr, void *arg)
     }
 }
 /******************************************************************************
-   * FunctionName : user_esp_platform_dns_check_cb
-   * Description  : 1s time callback to check dns found
-   * Parameters   : arg -- Additional argument to pass to the callback function
-   * Returns      : none
+   * FunctionName : user_esp_platform_dns_check_cb
+   * Description  : 1s time callback to check dns found
+   * Parameters   : arg -- Additional argument to pass to the callback function
+   * Returns      : none
  *******************************************************************************/
 LOCAL void ICACHE_FLASH_ATTR
 user_dns_check_cb(void *arg)
@@ -550,10 +640,10 @@ user_dns_check_cb(void *arg)
 }
 #endif
 /******************************************************************************
-   * FunctionName : user_check_ip
-   * Description  : check whether get ip addr or not
-   * Parameters   : none
-   * Returns      : none
+   * FunctionName : user_check_ip
+   * Description  : check whether get ip addr or not
+   * Parameters   : none
+   * Returns      : none
  *******************************************************************************/
 
 void ICACHE_FLASH_ATTR
@@ -604,10 +694,10 @@ user_check_ip(void)
     }
 }
 /******************************************************************************
-   * FunctionName : user_set_station_config
-   * Description  : set the router info which ESP8266 station will connect to
-   * Parameters   : none
-   * Returns      : none
+   * FunctionName : user_set_station_config
+   * Description  : set the router info which ESP8266 station will connect to
+   * Parameters   : none
+   * Returns      : none
  *******************************************************************************/
 void ICACHE_FLASH_ATTR
 user_set_station_config(void)
@@ -635,15 +725,6 @@ xTaskHandle xHandle1 = NULL;
 xTaskHandle xHandle2 = NULL;
 
 /* Task to be created. */
-void connect_router( void * pvParameters )
-{
-    printf("set station mode\n");
-    wifi_set_opmode(STATIONAP_MODE);
-    user_set_station_config();
-    vTaskDelete(xHandle1);
-}
-
-/* Task to be created. */
 void connect_mqttserver( void * pvParameters )
 {
     while(user_tcp_conn.state != ESPCONN_CONNECT)
@@ -654,19 +735,116 @@ void connect_mqttserver( void * pvParameters )
     mqtt_client_demo();
     vTaskDelete(xHandle2);
 }
+
+/*smartconfig confirm*/
+void ICACHE_FLASH_ATTR
+smartconfig_done(sc_status status, void *pdata)
+{
+	portBASE_TYPE xReturned;
+
+    switch(status) {
+        case SC_STATUS_WAIT:
+            printf("SC_STATUS_WAIT\n");
+            break;
+        case SC_STATUS_FIND_CHANNEL:
+            printf("SC_STATUS_FIND_CHANNEL\n");
+            break;
+        case SC_STATUS_GETTING_SSID_PSWD:
+            printf("SC_STATUS_GETTING_SSID_PSWD\n");
+            sc_type *type = pdata;
+            if (*type == SC_TYPE_ESPTOUCH) {
+                printf("SC_TYPE:SC_TYPE_ESPTOUCH\n");
+            } else {
+                printf("SC_TYPE:SC_TYPE_AIRKISS\n");
+            }
+            break;
+        case SC_STATUS_LINK:
+            printf("SC_STATUS_LINK\n");
+            struct station_config *sta_conf = pdata;
+            /*save data to flash*/
+            struct station_config_save config_data;
+            memcpy(&config_data.config, pdata, 103);
+            config_data.save_flag = 2;
+            system_param_save_with_protect(USER_DATA_ADDR, &config_data, 104);
+
+	        wifi_station_set_config(sta_conf);
+	        wifi_station_disconnect();
+	        wifi_station_connect();
+
+
+            break;
+        case SC_STATUS_LINK_OVER:
+            printf("SC_STATUS_LINK_OVER\n");
+            if (pdata != NULL) {
+				//SC_TYPE_ESPTOUCH
+                uint8 phone_ip[4] = {0};
+
+                memcpy(phone_ip, (uint8*)pdata, 4);
+                printf("Phone ip: %d.%d.%d.%d\n",phone_ip[0],phone_ip[1],phone_ip[2],phone_ip[3]);
+
+    	        os_timer_disarm(&test_timer);
+    	        os_timer_setfn(&test_timer, (os_timer_func_t *)user_check_ip, NULL);
+    	        os_timer_arm(&test_timer, 100, 0);
+
+    	        xReturned = xTaskCreate(
+    	                                connect_mqttserver,       /* Function that implements the task. */
+    	                                "connet to mqttserver",          /* Text name for the task. */
+    	                                2048,      /* Stack size in words, not bytes. */
+    	                                ( void * ) 1,    /* Parameter passed into the task. */
+    	                                tskIDLE_PRIORITY,/* Priority at which the task is created. */
+    	                                &xHandle2 );      /* Used to pass out the created task's handle. */
+            } else {
+            	//SC_TYPE_AIRKISS - support airkiss v2.0
+				//airkiss_start_discover();
+            	printf("phone ip is null \n");
+			}
+            smartconfig_stop();
+            break;
+    }
+
+}
+
+/* Task to be created. */
+void connect_router( void * pvParameters )
+{
+	struct station_config_save config_data;
+	printf("set station mode\n");
+    wifi_set_opmode(STATION_MODE);//(STATIONAP_MODE);
+
+    system_param_load(USER_DATA_ADDR, 0, &config_data, 104);
+/*
+    printf("saveflag 0x%x\n",config_data.save_flag);
+
+    if(config_data.save_flag == 2){
+        wifi_station_set_config(&config_data.config);
+        //set a timer to check whether got ip from router succeed or not.
+        os_timer_disarm(&test_timer);
+        os_timer_setfn(&test_timer, (os_timer_func_t *)user_check_ip, NULL);
+        os_timer_arm(&test_timer, 100, 0);
+
+
+        xTaskCreate(connect_mqttserver, "connet to mqttserver",  2048, ( void * ) 1, tskIDLE_PRIORITY,&xHandle2 );
+    } else {
+    	smartconfig_start(smartconfig_done);
+    }*/
+    //smartconfig_start(smartconfig_done);
+    user_set_station_config();
+    vTaskDelete(xHandle1);
+}
+
+
 /******************************************************************************
-   * FunctionName : user_init
-   * Description  : entry of user application, init user function here
-   * Parameters   : none
-   * Returns      : none
+   * FunctionName : user_init
+   * Description  : entry of user application, init user function here
+   * Parameters   : none
+   * Returns      : none
  *******************************************************************************/
 void user_init(void)
 {
 	uart_init_new();
 	printf("SDK version:%s\n", system_get_sdk_version());
 
-    portBASE_TYPE xReturned1;
-    portBASE_TYPE xReturned2;
+    portBASE_TYPE xReturned1,xReturned2;
     /* Create the task, storing the handle. */
 
 #if 0
