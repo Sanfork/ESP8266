@@ -1,8 +1,8 @@
 /*
  * MAX6675.c
  *
- *  Created on: 2017��1��7��
- *      Author: fxsl01455
+ *  Created on: 2017/1/7/
+ *      Author: sanfork
  */
 #include "driver/MAX6675.h"
 
