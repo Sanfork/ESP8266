@@ -65,3 +65,21 @@ uint16 ADS1118_Get_Voltage(void)
 	 ADS1118_Voltage=(1.0)*((Data_REG*FS/32768)); */
 	return Data_REG;
 }
+
+void ADS1118_init(void){
+
+        PIN_FUNC_SELECT(PERIPHS_IO_MUX_MTDO_U,FUNC_GPIO15);
+        PIN_FUNC_SELECT(PERIPHS_IO_MUX_MTMS_U,FUNC_GPIO14);
+        PIN_FUNC_SELECT(PERIPHS_IO_MUX_MTCK_U,FUNC_GPIO13);
+        PIN_FUNC_SELECT(PERIPHS_IO_MUX_MTDI_U,FUNC_GPIO12);
+
+        GPIO_OUTPUT_SET(SPI_CS,LOW);    //pull up cs
+        GPIO_OUTPUT_SET(SPI_CK,LOW);    //pull down ck
+        GPIO_OUTPUT_SET(SPI_OUT,LOW);   //pull down out
+        GPIO_DIS_OUTPUT(SPI_IN);                //set si to input
+
+	ADS1118_Read(0x04);
+	ADS1118_Read(0x9B);
+}
+
+
